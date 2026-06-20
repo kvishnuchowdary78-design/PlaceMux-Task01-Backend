@@ -2,8 +2,8 @@ const express = require("express");
 const router = express.Router();
 const Application = require("../models/Application");
 const Job = require("../models/Job");
+const { evaluateCandidate } = require("../services/thresholdEngine");
 
-// Apply for a job
 router.post("/", async (req, res, next) => {
   try {
     const { jobId, studentName, studentEmail, resume } = req.body;
@@ -21,29 +21,47 @@ router.post("/", async (req, res, next) => {
     }
 
     if (job.status !== "Open") {
-      return res.status(400).json({ success: false, error: `Job is ${job.status}. Cannot apply.` });
+      return res.status(400).json({ success: false, error: `Cannot apply. Job is currently ${job.status}.` });
     }
 
-    // Idempotency — block duplicate application
     const existing = await Application.findOne({ jobId, studentEmail });
     if (existing) {
       return res.status(409).json({
         success: false,
-        error: "You have already applied for this job",
+        error: "You have already applied for this job.",
         data: existing,
       });
     }
 
-    const application = new Application({ jobId, studentName, studentEmail, resume });
+    const eligibility = await evaluateCandidate(studentEmail, job.skillThresholds);
+
+    if (!eligibility.eligible) {
+      return res.status(403).json({
+        success: false,
+        error: "Application blocked: does not meet required skill thresholds",
+        eligibility,
+      });
+    }
+
+    const application = new Application({
+      jobId,
+      studentName,
+      studentEmail,
+      resume,
+      eligibilitySnapshot: eligibility.breakdown,
+    });
     await application.save();
 
-    return res.status(201).json({ success: true, message: "Application submitted", data: application });
+    return res.status(201).json({
+      success: true,
+      message: "Application submitted — all skill thresholds met",
+      data: application,
+    });
   } catch (err) {
     next(err);
   }
 });
 
-// Get all applications for a job
 router.get("/job/:jobId", async (req, res, next) => {
   try {
     const job = await Job.findById(req.params.jobId);
@@ -52,20 +70,26 @@ router.get("/job/:jobId", async (req, res, next) => {
     }
 
     const applications = await Application.find({ jobId: req.params.jobId }).sort({ appliedAt: -1 });
-    return res.json({ success: true, jobTitle: job.title, count: applications.length, data: applications });
+
+    return res.json({
+      success: true,
+      jobTitle: job.title,
+      count: applications.length,
+      data: applications,
+    });
   } catch (err) {
     next(err);
   }
 });
 
-// Update application status
 router.patch("/:id/status", async (req, res, next) => {
   try {
     const { status } = req.body;
+
     if (!["Applied", "Shortlisted", "Rejected", "Hired"].includes(status)) {
       return res.status(400).json({
         success: false,
-        error: "status must be Applied, Shortlisted, Rejected, or Hired",
+        error: "status must be one of: Applied, Shortlisted, Rejected, Hired",
       });
     }
 
@@ -74,11 +98,12 @@ router.patch("/:id/status", async (req, res, next) => {
       { $set: { status } },
       { new: true }
     );
+
     if (!application) {
       return res.status(404).json({ success: false, error: "Application not found" });
     }
 
-    return res.json({ success: true, message: `Status updated to ${status}`, data: application });
+    return res.json({ success: true, message: `Application status updated to ${status}`, data: application });
   } catch (err) {
     next(err);
   }

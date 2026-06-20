@@ -14,10 +14,35 @@ const jobSchema = new mongoose.Schema(
     },
     description: {
       type: String,
-      required: [true, "Description is required"],
+      required: [true, "Job description is required"],
       trim: true,
     },
-    skills: { type: [String], default: [] },
+    skillThresholds: {
+      type: [
+        {
+          skillId: {
+            type: String,
+            required: [true, "skillId is required for each threshold"],
+            trim: true,
+          },
+          skillName: {
+            type: String,
+            required: [true, "skillName is required for each threshold"],
+            trim: true,
+          },
+          minLevel: {
+            type: Number,
+            required: [true, "minLevel is required for each threshold"],
+            min: [1, "minLevel must be at least L1"],
+            max: [100, "minLevel cannot exceed L100"],
+          },
+        },
+      ],
+      validate: {
+        validator: (arr) => Array.isArray(arr) && arr.length > 0,
+        message: "At least one skill threshold is required",
+      },
+    },
     salary: {
       min: { type: Number, default: 0 },
       max: { type: Number, default: 0 },
@@ -41,6 +66,10 @@ const jobSchema = new mongoose.Schema(
       type: Number,
       default: 1,
       min: [1, "At least 1 opening required"],
+    },
+    assessmentLinkGenerated: {
+      type: Boolean,
+      default: false,
     },
   },
   { timestamps: true }

@@ -18,18 +18,35 @@ const applicationSchema = new mongoose.Schema(
       lowercase: true,
       match: [/^\S+@\S+\.\S+$/, "Invalid email format"],
     },
-    resume: { type: String, trim: true },
+    resume: {
+      type: String,
+      trim: true,
+    },
     status: {
       type: String,
       enum: ["Applied", "Shortlisted", "Rejected", "Hired"],
       default: "Applied",
     },
-    appliedAt: { type: Date, default: Date.now },
+    appliedAt: {
+      type: Date,
+      default: Date.now,
+    },
+    eligibilitySnapshot: {
+      type: [
+        {
+          skillId: String,
+          skillName: String,
+          requiredLevel: Number,
+          candidateLevel: Number,
+          passed: Boolean,
+        },
+      ],
+      default: [],
+    },
   },
   { timestamps: true }
 );
 
-// Prevents same student applying to same job twice
 applicationSchema.index({ jobId: 1, studentEmail: 1 }, { unique: true });
 
 module.exports = mongoose.model("Application", applicationSchema);
