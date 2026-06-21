@@ -75,4 +75,11 @@ const jobSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+jobSchema.index(
+  { title: "text", description: "text", location: "text" },
+  { weights: { title: 5, location: 3, description: 1 }, name: "JobTextIndex" }
+);
+
+jobSchema.index({ status: 1, createdAt: -1 });
+
 module.exports = mongoose.model("Job", jobSchema);

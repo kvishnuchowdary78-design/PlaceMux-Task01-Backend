@@ -8,6 +8,7 @@ const companyRoutes = require("./routes/company");
 const jobRoutes = require("./routes/jobs");
 const applicationRoutes = require("./routes/applications");
 const competencyScoreRoutes = require("./routes/competencyScores");
+const searchRoutes = require("./routes/search");
 
 const app = express();
 
@@ -29,6 +30,7 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api/company", companyRoutes);
+app.use("/api/search", searchRoutes);
 app.use("/api/jobs", jobRoutes);
 app.use("/api/applications", applicationRoutes);
 app.use("/api/competency-scores", competencyScoreRoutes);

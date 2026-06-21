@@ -69,12 +69,28 @@ router.get("/job/:jobId", async (req, res, next) => {
       return res.status(404).json({ success: false, error: "Job not found" });
     }
 
-    const applications = await Application.find({ jobId: req.params.jobId }).sort({ appliedAt: -1 });
+    let page = parseInt(req.query.page, 10);
+    let limit = parseInt(req.query.limit, 10);
+    if (!Number.isInteger(page) || page < 1) page = 1;
+    if (!Number.isInteger(limit) || limit < 1) limit = 20;
+    if (limit > 100) limit = 100;
+
+    const filter = { jobId: req.params.jobId };
+    if (req.query.status) filter.status = req.query.status;
+
+    const total = await Application.countDocuments(filter);
+    const applications = await Application.find(filter)
+      .sort({ appliedAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit);
 
     return res.json({
       success: true,
       jobTitle: job.title,
-      count: applications.length,
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
       data: applications,
     });
   } catch (err) {
@@ -93,17 +109,89 @@ router.patch("/:id/status", async (req, res, next) => {
       });
     }
 
-    const application = await Application.findByIdAndUpdate(
-      req.params.id,
-      { $set: { status } },
-      { new: true }
-    );
-
+    const application = await Application.findById(req.params.id);
     if (!application) {
       return res.status(404).json({ success: false, error: "Application not found" });
     }
 
+    if (["Rejected", "Hired"].includes(application.status) && application.status !== status) {
+      return res.status(409).json({
+        success: false,
+        error: `Cannot change status — application is already ${application.status} (terminal state).`,
+      });
+    }
+
+    application.status = status;
+    await application.save();
+
     return res.json({ success: true, message: `Application status updated to ${status}`, data: application });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/:id/shortlist", async (req, res, next) => {
+  try {
+    const application = await Application.findById(req.params.id);
+    if (!application) {
+      return res.status(404).json({ success: false, error: "Application not found" });
+    }
+
+    if (["Rejected", "Hired"].includes(application.status)) {
+      return res.status(409).json({
+        success: false,
+        error: `Cannot shortlist — application is already ${application.status} (terminal state).`,
+      });
+    }
+
+    if (application.status === "Shortlisted") {
+      return res.status(200).json({
+        success: true,
+        message: "Application was already shortlisted",
+        data: application,
+      });
+    }
+
+    const failedSkill = (application.eligibilitySnapshot || []).find((s) => s.passed === false);
+    if (failedSkill) {
+      return res.status(403).json({
+        success: false,
+        error: `Cannot shortlist — candidate did not meet the required threshold for ${failedSkill.skillName}.`,
+        eligibilitySnapshot: application.eligibilitySnapshot,
+      });
+    }
+
+    application.status = "Shortlisted";
+    await application.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Candidate shortlisted",
+      data: application,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/job/:jobId/shortlisted", async (req, res, next) => {
+  try {
+    const job = await Job.findById(req.params.jobId);
+    if (!job) {
+      return res.status(404).json({ success: false, error: "Job not found" });
+    }
+
+    const shortlisted = await Application.find({
+      jobId: req.params.jobId,
+      status: "Shortlisted",
+    }).sort({ updatedAt: -1 });
+
+    return res.json({
+      success: true,
+      jobTitle: job.title,
+      count: shortlisted.length,
+      data: shortlisted,
+    });
   } catch (err) {
     next(err);
   }
